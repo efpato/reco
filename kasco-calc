@@ -1,0 +1,199 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import logging
+import os
+import optparse
+import signal
+import sys
+import traceback
+
+import xlrd
+import xlsxwriter
+from selenium.webdriver import Firefox
+
+from pages import KaskoCalcPage, resolve_captcha
+
+
+PAGE_LOAD_TIMEOUT = 60
+
+logging.basicConfig(format=("%(asctime)s  %(levelname)-8s "
+                            "%(module)-15s %(message)s"),
+                    level=logging.DEBUG)
+logging.getLogger(
+    "selenium.webdriver.remote.remote_connection").setLevel(logging.WARNING)
+
+
+def load(filename):
+    logging.debug('Loading data from "%s"', filename)
+    workbook = xlrd.open_workbook(filename)
+    sheet = workbook.sheet_by_index(0)
+
+    data = []
+    if sheet.nrows > 1:
+        for row in range(sheet.nrows)[1:]:
+            data.append({
+                "another_sk": sheet.cell_value(row, 0) == 'Да',
+                "previous_sk": sheet.cell_value(row, 1),
+                "pay_period": sheet.cell_value(row, 2),
+                "face": sheet.cell_value(row, 3),
+                "is_bank": sheet.cell_value(row, 4) == 'Да',
+                "brand": sheet.cell_value(row, 5),
+                "model": (int(sheet.cell_value(row, 6))
+                          if str(sheet.cell_value(row, 6)).replace(
+                              '.0', '').isdigit()
+                          else sheet.cell_value(row, 6)),
+                "dtp_count": int(sheet.cell_value(row, 7)),
+                "auto_race": sheet.cell_value(row, 8) == 'Да',
+                "price": int(sheet.cell_value(row, 9)),
+                "year": int(sheet.cell_value(row, 10)),
+                "purchase_date": sheet.cell_value(row, 11),
+                "territory_name": sheet.cell_value(row, 12),
+                "owner_address": sheet.cell_value(row, 13),
+                "driver_list": sheet.cell_value(row, 14),
+                "driver_age": [int(float(age))
+                               for age in str(
+                                   sheet.cell_value(row, 15)).split(';')
+                               if age],
+                "driver_stage": [int(float(stage))
+                                 for stage in str(
+                                     sheet.cell_value(row, 16)).split(';')
+                                 if stage],
+                "driver_sex": str(sheet.cell_value(row, 17)).split(';'),
+                "steal_device": sheet.cell_value(row, 18),
+                "is_thf_mech_device": sheet.cell_value(row, 19) == 'Да',
+                "payment": sheet.cell_value(row, 20)
+            })
+
+    logging.debug('Data has been loaded (%d rows)', len(data))
+
+    return data
+
+
+def report(filename, results):
+    logging.debug('Creating report ...')
+    workbook_in = xlrd.open_workbook(filename)
+    sheet_in = workbook_in.sheet_by_index(0)
+
+    out = "%s.out.xlsx" % os.path.basename(filename).split('.')[0]
+    workbook_out = xlsxwriter.Workbook(out)
+    sheet_out = workbook_out.add_worksheet()
+
+    for row in range(sheet_in.nrows):
+        for col in range(sheet_in.ncols):
+            sheet_out.write(row, col, sheet_in.cell_value(row, col))
+
+        col = sheet_in.ncols
+        if 0 < row <= len(results):
+            if not isinstance(results[row - 1], list):
+                sheet_out.write(row, col, results[row - 1])
+            else:
+                for result in results[row - 1]:
+                    total, description = result
+                    sheet_out.write(row, col, total)
+                    col += 1
+                    sheet_out.write(row, col, description)
+                    col += 1
+
+    workbook_out.close()
+    logging.debug('Report has been created: "%s"', out)
+
+
+def calculate(params):
+    logging.debug('Starting calculation: params => %s', params)
+
+    driver = None
+    result = None
+
+    try:
+        driver = Firefox()
+        driver.maximize_window()
+        logging.debug('Firefox started')
+
+        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+        logging.debug('Set page_load_timeout=%d', PAGE_LOAD_TIMEOUT)
+
+        page = KaskoCalcPage(driver)
+        logging.debug('Opening "%s"', KaskoCalcPage.URL)
+        page.get(KaskoCalcPage.URL)
+
+        if params['another_sk']:
+            page.another_sk = True
+            page.previous_sk = params['previous_sk']
+        page.pay_period = params['pay_period']
+        page.face = params['face']
+        page.is_bank = params['is_bank']
+        page.brand_model(params['brand'], params['model'])
+        page.dtp_count = params['dtp_count']
+        page.auto_race = params['auto_race']
+        page.price = params['price']
+        page.year = params['year']
+        page.purchase_date = params['purchase_date']
+        page.territory_name(params['territory_name'])
+        page.owner_address(params['owner_address'])
+        page.driver_list(params['driver_list'])
+        if params['driver_list'] == 'Ограниченный список':
+            for i in range(len(params['driver_age'])):
+                if i > 0:
+                    page.add_driver.click()
+                page.driver_age(i + 1, params['driver_age'][i])
+                page.driver_stage(i + 1, params['driver_stage'][i])
+                page.driver_sex(i + 1, params['driver_sex'][i])
+        page.steal_device = params['steal_device']
+        page.is_thf_mech_device = params['is_thf_mech_device']
+        page.payment(params['payment'])
+
+        page.code = resolve_captcha(page.captcha.get_attribute('src'))
+        page.calculation.click()
+
+        if page.error:
+            raise Exception(page.error)
+
+        result = page.result
+    except:
+        etype, value, tb = sys.exc_info()
+        result = "%r" % value
+        traceback.print_exception(etype, value, tb)
+    finally:
+        if driver is not None:
+            driver.quit()
+
+    logging.debug('Calculation has been finished. Result => %s', result)
+
+    return result
+
+
+stopped = False
+
+
+def main():
+    def sigint_handler(signum, frame):
+        global stopped
+
+        logging.info("Got signal: signum=%d, frame=%s", signum, frame)
+        stopped = True
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    parser = optparse.OptionParser(usage="%prog <file>")
+    _, args = parser.parse_args()
+
+    if len(args) < 1:
+        parser.error("Invalid arguments")
+
+    filename = args[0]
+
+    if not os.path.exists(filename):
+        parser.error("File '%s' not exists" % filename)
+
+    results = []
+    for data in load(filename):
+        if stopped:
+            break
+        results.append(calculate(data))
+
+    report(filename, results)
+
+
+if __name__ == '__main__':
+    main()
