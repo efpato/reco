@@ -6,7 +6,11 @@ from urllib.request import urlopen
 from page_object import PageObject, PageElement, PageElements
 from page_object.elements import Button, Checkbox, Link, Radio, Select, Textbox
 from pytesseract import image_to_string
-from PIL import Image
+
+try:
+    from PIL import Image
+except ImportError:
+    from pil import Image
 
 
 def resolve_captcha(url):
