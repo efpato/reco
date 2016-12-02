@@ -48,9 +48,9 @@ class KaskoCalcPage(PageObject):
         self.webdriver.switch_to_window(
             self.webdriver.window_handles[1])
 
-        Link(xpath=("//table/tbody/tr"
-                    "/td[contains(text(), '%s')]/.."
-                    "/td/span[contains(text(), '%s')]") %
+        Link(xpath=('//table/tbody/tr'
+                    '/td[contains(text(), "%s")]/..'
+                    '/td/span[contains(text(), "%s")]') %
              (brand, model)).__get__(self, self.__class__).click()
 
         self.webdriver.switch_to_window(

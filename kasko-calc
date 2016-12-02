@@ -5,8 +5,6 @@ import logging
 import os
 import optparse
 import signal
-import sys
-import traceback
 
 import xlrd
 import xlsxwriter
@@ -150,10 +148,9 @@ def calculate(params):
             raise Exception(page.error)
 
         result = page.result
-    except:
-        etype, value, tb = sys.exc_info()
-        result = "%r" % value
-        traceback.print_exception(etype, value, tb)
+    except Exception as e:
+        logging.exception(e)
+        result = "%s" % e
     finally:
         if driver is not None:
             driver.quit()
