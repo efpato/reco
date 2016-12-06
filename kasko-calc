@@ -103,57 +103,68 @@ def calculate(params):
     driver = None
     result = None
 
-    try:
-        driver = Firefox()
-        driver.maximize_window()
-        logging.debug('Firefox started')
+    for i in range(3):
+        if stopped:
+            break
 
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        logging.debug('Set page_load_timeout=%d', PAGE_LOAD_TIMEOUT)
+        logging.debug('Attempt #%d...' % (i + 1))
 
-        page = KaskoCalcPage(driver)
-        logging.debug('Opening "%s"', KaskoCalcPage.URL)
-        page.get(KaskoCalcPage.URL)
+        try:
+            driver = Firefox()
+            driver.maximize_window()
+            logging.debug('Firefox started')
 
-        if params['another_sk']:
-            page.another_sk = True
-            page.previous_sk = params['previous_sk']
-        page.pay_period = params['pay_period']
-        page.face = params['face']
-        page.is_bank = params['is_bank']
-        page.brand_model(params['brand'], params['model'])
-        page.dtp_count = params['dtp_count']
-        page.auto_race = params['auto_race']
-        page.price = params['price']
-        page.year = params['year']
-        page.purchase_date = params['purchase_date']
-        page.territory_name(params['territory_name'])
-        page.owner_address(params['owner_address'])
-        page.driver_list(params['driver_list'])
-        if params['driver_list'] == 'Ограниченный список':
-            for i in range(len(params['driver_age'])):
-                if i > 0:
-                    page.add_driver.click()
-                page.driver_age(i + 1, params['driver_age'][i])
-                page.driver_stage(i + 1, params['driver_stage'][i])
-                page.driver_sex(i + 1, params['driver_sex'][i])
-        page.steal_device = params['steal_device']
-        page.is_thf_mech_device = params['is_thf_mech_device']
-        page.payment(params['payment'])
+            driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+            logging.debug('Set page_load_timeout=%d', PAGE_LOAD_TIMEOUT)
 
-        page.code = resolve_captcha(page.captcha.get_attribute('src'))
-        page.calculation.click()
+            page = KaskoCalcPage(driver)
+            logging.debug('Opening "%s"', KaskoCalcPage.URL)
+            page.get(KaskoCalcPage.URL)
 
-        if page.error:
-            raise Exception(page.error)
+            if params['another_sk']:
+                page.another_sk = True
+                page.previous_sk = params['previous_sk']
+            page.pay_period = params['pay_period']
+            page.face = params['face']
+            page.is_bank = params['is_bank']
+            page.brand_model(params['brand'], params['model'])
+            page.dtp_count = params['dtp_count']
+            page.auto_race = params['auto_race']
+            page.price = params['price']
+            page.year = params['year']
+            page.purchase_date = params['purchase_date']
+            page.territory_name(params['territory_name'])
+            page.owner_address(params['owner_address'])
+            page.driver_list(params['driver_list'])
+            if params['driver_list'] == 'Ограниченный список':
+                for i in range(len(params['driver_age'])):
+                    if i > 0:
+                        page.add_driver.click()
+                    page.driver_age(i + 1, params['driver_age'][i])
+                    page.driver_stage(i + 1, params['driver_stage'][i])
+                    page.driver_sex(i + 1, params['driver_sex'][i])
+            page.steal_device = params['steal_device']
+            page.is_thf_mech_device = params['is_thf_mech_device']
+            page.payment(params['payment'])
 
-        result = page.result
-    except Exception as e:
-        logging.exception(e)
-        result = "%s" % e
-    finally:
-        if driver is not None:
-            driver.quit()
+            page.code = resolve_captcha(page.captcha.get_attribute('src'))
+            page.calculation.click()
+
+            if page.error:
+                raise Exception(page.error)
+
+            result = page.result
+            break
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            logging.exception(e)
+            if i == 2:
+                result = "%s" % e
+                break
+        finally:
+            if driver is not None:
+                driver.quit()
 
     logging.debug('Calculation has been finished. Result => %s', result)
 

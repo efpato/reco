@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import time
 from io import BytesIO
 from urllib.request import urlopen
 
@@ -40,11 +41,22 @@ class KaskoCalcPage(PageObject):
     code = Textbox(name="codeImage")
     calculation = Button(name="calculation")
 
+    def wait_child_window(self):
+        start_time = time.time()
+
+        while time.time() - start_time < 30:
+            if len(self.webdriver.window_handles) > 1:
+                return
+            time.sleep(1)
+
+        raise RuntimeError('Child window timeout expired')
+
     def brand_model(self, brand, model):
         Button(xpath=("//input[@name='modelName']"
                       "/../input[@type='button']")).__get__(
                           self, self.__class__).click()
 
+        self.wait_child_window()
         self.webdriver.switch_to_window(
             self.webdriver.window_handles[1])
 
@@ -61,6 +73,7 @@ class KaskoCalcPage(PageObject):
                       "/../input[@type='button']")).__get__(
                           self, self.__class__).click()
 
+        self.wait_child_window()
         self.webdriver.switch_to_window(
             self.webdriver.window_handles[1])
 
@@ -76,6 +89,7 @@ class KaskoCalcPage(PageObject):
                       "/../input[@type='button']")).__get__(
                           self, self.__class__).click()
 
+        self.wait_child_window()
         self.webdriver.switch_to_window(
             self.webdriver.window_handles[1])
 
