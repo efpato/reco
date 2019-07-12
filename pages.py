@@ -1,109 +1,44 @@
 # -*- coding: utf-8 -*-
 
-import time
-from io import BytesIO
-from urllib.request import urlopen
+from page_object import PageObject, PageElements
+from page_object.ui.jquery import Button, Checkbox, Textbox
 
-from page_object import PageObject, PageElement, PageElements
-from page_object.elements import Button, Checkbox, Link, Radio, Select, Textbox
-from pytesseract import image_to_string
-
-try:
-    from PIL import Image
-except ImportError:
-    from pil import Image
-
-
-def resolve_captcha(url):
-    response = urlopen(url)
-    img = Image.open(BytesIO(response.read()))
-
-    return image_to_string(img, config="-psm 8")
+from elements import AutocompleteTextbox, Select
 
 
 class KaskoCalcPage(PageObject):
-    URL = 'http://www.reso.ru/Retail/Motor/Calculator/'
+    pay_period = Select(css="select[name='payPeriod']")
 
-    another_sk = Checkbox(id="AnotherSK")
-    previous_sk = Select(id="dictPreviousSK")
-    pay_period = Select(name="payPeriod")
-    face = Select(name="face")
-    is_bank = Checkbox(id="isBank")
-    dtp_count = Textbox(name="CarDamageQuanityManual")
-    auto_race = Checkbox(id="autoRace")
-    price = Textbox(name="price")
-    year = Select(name="year")
-    purchase_date = Textbox(name="purchaseDate")
-    add_driver = Button(name="addDriver")
-    steal_device = Select(name="stealDevice")
-    is_thf_mech_device = Checkbox(id="isThfMechDevice")
-    captcha = PageElement(xpath="//img[@class='code']")
-    code = Textbox(name="codeImage")
-    calculation = Button(name="calculation")
+    car_brand = AutocompleteTextbox(css="input[name='carBrand']")
+    car_model = AutocompleteTextbox(css="input[name='carModel']")
+    car_year = Select(css="select[name='year']")
+    price = Textbox(css="input[name='price']")
+    steal_device = AutocompleteTextbox(css="input[name='stealDevice']")
+    is_thf_mech_device = Checkbox(css="input#isThfMechDevice")
+    auto_race = Checkbox(css="input#autoRace")
+    is_bank = Checkbox(css="input#isBank")
+    dtp_count = Textbox(css="input[name='CarDamageQuanityManual']")
+    purchase_date = Textbox(css="input[name='purchaseDate']")
 
-    def wait_child_window(self):
-        start_time = time.time()
+    region = AutocompleteTextbox(css="input[name='region']")
+    owner_address = AutocompleteTextbox(css="input[name='ownerAddress']")
 
-        while time.time() - start_time < 30:
-            if len(self.webdriver.window_handles) > 1:
-                return
-            time.sleep(1)
+    face = Select(css="select[name='face']")
+    drivers_unlimit = Button(css="input#driverList-0")
+    drivers_limit = Button(css="input#driverList-1")
+    drivers_unlimit_22 = Button(css="input#driverList-3")
+    add_driver = Button(css="input[name='driverCount'] + a")
 
-        raise RuntimeError('Child window timeout expired')
+    payment_1 = Button(css="input#payment-1")
+    payment_2 = Button(css="input#payment-2")
 
-    def brand_model(self, brand, model):
-        Button(xpath=("//input[@name='modelName']"
-                      "/../input[@type='button']")).__get__(
-                          self, self.__class__).click()
+    another_sk = Checkbox(css="input#AnotherSK")
+    previous_sk = Select(css="select[name='prevInsurantID']")
 
-        self.wait_child_window()
-        self.webdriver.switch_to_window(
-            self.webdriver.window_handles[1])
+    calculation = Button(css="input[value='Рассчитать']")
 
-        Link(xpath=('//table/tbody/tr'
-                    '/td[contains(text(), "%s")]/..'
-                    '/td/span[contains(text(), "%s")]') %
-             (brand, model)).__get__(self, self.__class__).click()
-
-        self.webdriver.switch_to_window(
-            self.webdriver.window_handles[0])
-
-    def territory_name(self, value):
-        Button(xpath=("//input[@name='territoryName']"
-                      "/../input[@type='button']")).__get__(
-                          self, self.__class__).click()
-
-        self.wait_child_window()
-        self.webdriver.switch_to_window(
-            self.webdriver.window_handles[1])
-
-        Link(xpath=("//table/tbody/tr"
-                    "/td/span[contains(text(), '%s')]") % value).__get__(
-                        self, self.__class__).click()
-
-        self.webdriver.switch_to_window(
-            self.webdriver.window_handles[0])
-
-    def owner_address(self, value):
-        Button(xpath=("//input[@name='ownerAddressName']"
-                      "/../input[@type='button']")).__get__(
-                          self, self.__class__).click()
-
-        self.wait_child_window()
-        self.webdriver.switch_to_window(
-            self.webdriver.window_handles[1])
-
-        Link(xpath=("//table/tbody/tr"
-                    "/td/span[contains(text(), '%s')]") % value).__get__(
-                        self, self.__class__).click()
-
-        self.webdriver.switch_to_window(
-            self.webdriver.window_handles[0])
-
-    def driver_list(self, value):
-        Radio(xpath=("//label/a[contains(text(), '%s')]"
-                     "/../../input") % value).__get__(
-                         self, self.__class__).click()
+    code = Textbox(css="input[name='code']")
+    confirm = Button(css="input[value='Подтвердить']")
 
     def driver_age(self, index, value):
         Textbox(name="driverAge%d" % index).__set__(self, value)
@@ -112,22 +47,35 @@ class KaskoCalcPage(PageObject):
         Textbox(name="driverStage%d" % index).__set__(self, value)
 
     def driver_sex(self, index, value):
-        Select(name="driverSex%d" % index).__set__(self, value)
+        if value.lower() == 'мужчина':
+            Button(css="input[name='driverSex%d'][value='M']" % index).__get__(
+                self, self.__class__).click()
+        if value.lower() == 'женщина':
+            Button(css="input[name='driverSex%d'][value='F']" % index).__get__(
+                self, self.__class__).click()
 
-    def payment(self, value):
-        Radio(xpath=("//label[contains(text(), '%s')]"
-                     "/../input") % value).__get__(
-                         self, self.__class__).click()
-
-    @property
-    def error(self):
-        return PageElement(id="error").__get__(self, self.__class__).text
+    def resolve_recaptcha(self, phone, recaptcha_response):
+        self.webdriver.execute_script(
+            """
+            $("input[name='phone']").val('%s');
+            $("textarea#g-recaptcha-response").html("%s");
+            ajaxSendCode();
+            """ % (phone, recaptcha_response))
 
     @property
     def result(self):
-        rows = PageElements(xpath="//table[@id='result']/tbody/tr").__get__(
-            self, self.__class__)[9:18]
+        services = PageElements(
+            xpath="//div[@class='service_item'][./div[@class='service_value']]"
+        ).__get__(self, self.__class__)
 
-        return [(row.find_element_by_xpath(".//td[1]").text,
-                 row.find_element_by_xpath(".//td[2]").text)
-                for row in rows]
+        res = []
+        for service in services:
+            label = service.find_element_by_xpath(
+                "./div[@class='service_label']").text.replace(
+                    '\n', '').strip()
+            value = service.find_element_by_xpath(
+                "./div[@class='service_value']").text.replace(
+                    '\n', ';').strip()
+            res.append((label, value))
+
+        return res

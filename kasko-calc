@@ -5,12 +5,16 @@ import logging
 import os
 import optparse
 import signal
+import time
 
 import xlrd
 import xlsxwriter
-from selenium.webdriver import Firefox
+from selenium.webdriver import Chrome, ChromeOptions
 
-from pages import KaskoCalcPage, resolve_captcha
+from pages import KaskoCalcPage
+from recaptcha import resolve
+from sms import wait_for_sms
+from utils import get_api_key, get_site_key
 
 
 PAGE_LOAD_TIMEOUT = 60
@@ -43,10 +47,10 @@ def load(filename):
                           else sheet.cell_value(row, 6)),
                 "dtp_count": int(sheet.cell_value(row, 7)),
                 "auto_race": sheet.cell_value(row, 8) == 'Да',
-                "price": int(sheet.cell_value(row, 9)),
-                "year": int(sheet.cell_value(row, 10)),
+                "price": int(float(sheet.cell_value(row, 9))),
+                "year": int(float(sheet.cell_value(row, 10))),
                 "purchase_date": sheet.cell_value(row, 11),
-                "territory_name": sheet.cell_value(row, 12),
+                "region": sheet.cell_value(row, 12),
                 "owner_address": sheet.cell_value(row, 13),
                 "driver_list": sheet.cell_value(row, 14),
                 "driver_age": [int(float(age))
@@ -103,63 +107,91 @@ def calculate(params):
     driver = None
     result = None
 
-    for i in range(3):
+    for attempt in range(1):
         if stopped:
             break
 
-        logging.debug('Attempt #%d...' % (i + 1))
+        logging.debug('Attempt #%d...', attempt + 1)
 
         try:
-            driver = Firefox()
+            options = ChromeOptions()
+#             options.add_argument('headless')
+#             options.add_argument('window-size=1280x800')
+
+            driver = Chrome(chrome_options=options)
+            driver = Chrome()
             driver.maximize_window()
-            logging.debug('Firefox started')
+            logging.debug('Chrome started')
 
             driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
             logging.debug('Set page_load_timeout=%d', PAGE_LOAD_TIMEOUT)
 
-            page = KaskoCalcPage(driver)
-            logging.debug('Opening "%s"', KaskoCalcPage.URL)
-            page.get(KaskoCalcPage.URL)
+            url = 'https://www.reso.ru/Retail/Motor/Calculator/'
+            logging.debug('Opening "%s"', url)
+            driver.get(url)
 
-            if params['another_sk']:
-                page.another_sk = True
-                page.previous_sk = params['previous_sk']
+            page = KaskoCalcPage(driver)
+
             page.pay_period = params['pay_period']
-            page.face = params['face']
-            page.is_bank = params['is_bank']
-            page.brand_model(params['brand'], params['model'])
-            page.dtp_count = params['dtp_count']
-            page.auto_race = params['auto_race']
+
+            page.car_brand = params['brand']
+            page.car_model = params['model']
+            page.car_year = params['year']
             page.price = params['price']
-            page.year = params['year']
-            page.purchase_date = params['purchase_date']
-            page.territory_name(params['territory_name'])
-            page.owner_address(params['owner_address'])
-            page.driver_list(params['driver_list'])
-            if params['driver_list'] == 'Ограниченный список':
+#             page.purchase_date = params['purchase_date']
+            if params['steal_device'].lower() != 'отсутствует':
+                page.steal_device = params['steal_device']
+            page.is_thf_mech_device = params['is_thf_mech_device']
+            page.auto_race = params['auto_race']
+            page.is_bank = params['is_bank']
+            page.dtp_count = params['dtp_count']
+
+            page.region = params['region']
+            page.owner_address = params['owner_address']
+
+            page.face = params['face']
+            if params['driver_list'] == 'Без ограничения':
+                page.drivers_unlimit.click()
+            elif params['driver_list'] == 'Ограниченный список':
                 for i in range(len(params['driver_age'])):
                     if i > 0:
                         page.add_driver.click()
                     page.driver_age(i + 1, params['driver_age'][i])
                     page.driver_stage(i + 1, params['driver_stage'][i])
                     page.driver_sex(i + 1, params['driver_sex'][i])
-            page.steal_device = params['steal_device']
-            page.is_thf_mech_device = params['is_thf_mech_device']
-            page.payment(params['payment'])
+            elif params['driver_list'] == 'Без ограничения 22+, 2+':
+                page.drivers_unlimit_22.click()
 
-            page.code = resolve_captcha(page.captcha.get_attribute('src'))
+            if params['payment'] == ('Ремонт на СТОА официальных дилеров по '
+                                     'направлению страховой компании'):
+                page.payment_1.click()
+            elif params['payment'] == ('Ремонт на СТОА, не являющихся '
+                                       'официальными дилерами, по направлению '
+                                       'страховой компании'):
+                page.payment_2.click()
+
+            if params['another_sk']:
+                page.another_sk = True
+                page.previous_sk = params['previous_sk']
+
             page.calculation.click()
 
-            if page.error:
-                raise Exception(page.error)
+            api_key = get_api_key()
+            site_key = get_site_key()
+            captcha = resolve(url, api_key, site_key)
+            phone = '+79233619670'
+            timestamp = time.time()
+            page.resolve_recaptcha(phone, captcha)
+            code = wait_for_sms(
+                phone, from_='www.reso.ru', timestamp=timestamp)
+            page.code = code
+            page.confirm.click()
 
             result = page.result
             break
-        except KeyboardInterrupt:
-            raise
         except Exception as e:
             logging.exception(e)
-            if i == 2:
+            if attempt == 2:
                 result = "%s" % e
                 break
         finally:
@@ -186,7 +218,7 @@ def main():
     parser = optparse.OptionParser(usage="%prog <file>")
     _, args = parser.parse_args()
 
-    if len(args) < 1:
+    if not args:
         parser.error("Invalid arguments")
 
     filename = args[0]
